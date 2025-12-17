@@ -1,0 +1,88 @@
+{
+  "GitHub监控插件": {
+    "name": "GitHub监控插件",
+    "desc": "定时监控GitHub仓库commit变化并发送通知",
+    "version": "1.2.1",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_github_monitor_shell",
+    "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "astrbot_plugin_help": {
+    "name": "astrbot_plugin_help",
+    "desc": "查看所有命令，包括插件，返回一张帮助图片",
+    "version": "v1.1.3",
+    "author": "tinker",
+    "repo": "https://github.com/tinkerbellqwq/astrbot_plugin_help",
+    "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "astrbot_plugin_re_xiuxian": {
+    "name": "astrbot_plugin_re_xiuxian",
+    "desc": "重生之凡人修仙传 - 包含完善的事件系统、前台查询和后台管理功能",
+    "version": "v0.0.3",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_re_xiuxian",
+    "display_name": "重生之凡人修仙传",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "astrbot_plugin_shell_box": {
+    "name": "astrbot_plugin_shell_box",
+    "desc": "开盒别人！",
+    "version": "v1.0.0",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_shell_box",
+    "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "astrbot_plugin_shell_emoji_reply": {
+    "name": "astrbot_plugin_shell_emoji_reply",
+    "desc": "自动为指定的用户回复表情消息，支持开关和自定义速度",
+    "version": "v1.0.2",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_shell_emoji_reply",
+    "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "steam_status_monitor_Shell": {
+    "name": "steam_status_monitor_Shell",
+    "desc": "用于监控steam指定玩家的在线/离线/游戏状态变更，并在状态变化时推送通知。",
+    "version": "2.2.4",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_steam_status_monitor_shell",
+    "display_name": "",
+    "social_link": "https://github.com/1592363624",
+    "tags": [
+      "steam"
+    ],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  }
+}
