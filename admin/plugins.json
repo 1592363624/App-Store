@@ -2,7 +2,7 @@
   "GitHub监控插件": {
     "name": "GitHub监控插件",
     "desc": "定时监控GitHub仓库commit变化并发送通知",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "author": "Shell",
     "repo": "https://github.com/1592363624/astrbot_plugin_github_monitor_shell",
     "display_name": "GitHub监控插件",
@@ -10,7 +10,7 @@
     "tags": [],
     "logo": "",
     "pinned": false,
-    "stars": 0,
+    "stars": 666,
     "updated_at": ""
   },
   "astrbot_plugin_help": {
