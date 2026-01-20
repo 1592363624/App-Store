@@ -1,0 +1,81 @@
+name: Auto Pack Private Repo On Push
+
+# 触发条件：监听 repository_dispatch 事件（由私有仓库触发）
+on:
+  repository_dispatch:
+    types: [pack_trigger]  # 自定义事件类型，需和私有仓库的触发参数一致
+  workflow_dispatch:       # 保留手动触发，方便测试
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  pack-specific-repo:
+    runs-on: ubuntu-latest
+    steps:
+      # 步骤 1：配置 Git 凭证（拉取私有仓库用）
+      - name: Configure Git Credentials
+        run: |
+          git config --global credential.helper store
+          echo "https://${{ secrets.PRIVATE_REPO_TOKEN }}:@github.com" > ~/.git-credentials
+
+      # 步骤 2：解析触发参数，拉取对应私有仓库代码
+      - name: Clone Triggered Private Repository
+        env:
+          # 从 dispatch 事件中获取传递的仓库名、分支名（私有仓库触发时传入）
+          REPO_NAME: ${{ github.event.client_payload.repo_name }}
+          REPO_BRANCH: ${{ github.event.client_payload.repo_branch }}
+          GITHUB_USER: ${{ github.event.client_payload.github_user }}
+        run: |
+          # 校验参数是否存在
+          if [ -z "$REPO_NAME" ] || [ -z "$GITHUB_USER" ]; then
+            echo "Error: 缺少仓库名/用户名参数"
+            exit 1
+          fi
+          # 拉取对应私有仓库（默认分支为 main，可通过参数覆盖）
+          REPO_URL="https://github.com/$GITHUB_USER/$REPO_NAME.git"
+          git clone $REPO_URL target-repo
+          cd target-repo
+          git checkout ${REPO_BRANCH:-main}  # 分支不存在则用main
+
+      # 步骤 3：安装依赖（通用 Node.js 示例，可按仓库类型动态调整）
+      - name: Install Dependencies
+        working-directory: ./target-repo
+        run: |
+          # 适配多语言：可根据仓库名/特征文件判断语言（比如检测 package.json/mvn pom.xml）
+          if [ -f "package.json" ]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+            npm install
+          elif [ -f "pom.xml" ]; then
+            sudo apt-get install -y maven
+          elif [ -f "requirements.txt" ]; then
+            sudo apt-get install -y python3-pip
+            pip3 install -r requirements.txt
+          fi
+
+      # 步骤 4：打包代码（动态适配多语言）
+      - name: Build Project
+        working-directory: ./target-repo
+        run: |
+          # 按仓库类型执行打包命令
+          if [ -f "package.json" ]; then
+            npm run build || echo "Node.js 打包命令未配置，跳过"
+          elif [ -f "pom.xml" ]; then
+            mvn package -DskipTests || echo "Maven 打包命令未配置，跳过"
+          elif [ -f "requirements.txt" ]; then
+            # Python 打包示例（需提前在私有仓库配好 pyinstaller）
+            pyinstaller --onefile main.py || echo "Python 打包命令未配置，跳过"
+          fi
+
+      # 步骤 5：上传打包产物（产物名包含仓库名，方便区分）
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.client_payload.repo_name }}-build
+          path: |
+            ./target-repo/dist/
+            ./target-repo/target/
+            ./target-repo/dist/*.exe
+          retention-days: 7
