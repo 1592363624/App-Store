@@ -79,3 +79,33 @@ jobs:
             ./target-repo/target/
             ./target-repo/dist/*.exe
           retention-days: 7
+
+      # 步骤 6：生成 Release Tag
+      - name: Generate Release Tag
+        id: tag
+        run: |
+          # 使用时间戳作为版本号的一部分
+          TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
+          REPO_NAME="${{ github.event.client_payload.repo_name }}"
+          # 处理空变量情况
+          if [ -z "$REPO_NAME" ]; then REPO_NAME="manual-build"; fi
+          echo "tag_name=${REPO_NAME}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      # 步骤 7：创建 GitHub Release 并上传产物
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: success()
+        with:
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Release ${{ steps.tag.outputs.tag_name }}
+          body: |
+            Build for repository: ${{ github.event.client_payload.repo_name }}
+            Branch: ${{ github.event.client_payload.repo_branch }}
+            Triggered by: ${{ github.event.client_payload.github_user }}
+          files: |
+            ./target-repo/dist/*
+            ./target-repo/target/*.jar
+            ./target-repo/dist/*.exe
+            ./target-repo/requirements.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
