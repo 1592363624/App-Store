@@ -1,10 +1,13 @@
 # App-Store 公开性的私有自用仓库-请不要直接访问
 
--app          存放软件本体
-
--admin        存放配置文件
 
 
+## 📞 联系作者
+
+- GitHub：[1592363624](https://github.com/1592363624)
+- QQ群：[点击加入群聊](https://qm.qq.com/q/b8JT5Rso6s)
+- Telegram：[点击加入群聊](https://t.me/ShellDFG)
+- 个人主页：[Shell个人主页](https://52shell.ltd)
 
 
 
