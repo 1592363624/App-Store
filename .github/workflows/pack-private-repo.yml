@@ -290,7 +290,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: Release ${{ steps.tag.outputs.tag_name }}
+          name: ${{ steps.tag.outputs.tag_name }}
           body: |
             Source Repo: ${{ github.event.client_payload.github_user }}/${{ github.event.client_payload.repo_name }}
             Branch: ${{ github.event.client_payload.repo_branch }}
