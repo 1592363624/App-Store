@@ -16,7 +16,15 @@ jobs:
 
     steps:
       # -----------------------------
-      # Step 0: 设置 Commit 状态为 Pending（为了在 GitHub UI 显示运行中）
+      # Step 0: Checkout App-Store (本仓库)
+      # -----------------------------
+      - name: Checkout App-Store
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # -----------------------------
+      # Step 0.5: 设置 Commit 状态为 Pending（为了在 GitHub UI 显示运行中）
       # -----------------------------
       - name: Set Commit Status Pending
         uses: actions/github-script@v6
@@ -63,6 +71,12 @@ jobs:
           cd target-repo
 
           git checkout ${REPO_BRANCH:-main}
+          
+          # 获取最近一次提交信息 (用于更新 README)
+          LAST_MSG=$(git log -1 --pretty=%s)
+          echo "COMMIT_MSG<<EOF" >> $GITHUB_ENV
+          echo "$LAST_MSG" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       # -----------------------------
       # Step 3：安装依赖（自动识别）
@@ -240,7 +254,119 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # -----------------------------
-      # Step 9: 更新 Commit 状态（成功或失败）
+      # Step 10: 更新 README.md (自动生成下载列表)
+      # -----------------------------
+      - name: Update README with Latest Release
+        if: success()
+        shell: python
+        env:
+          TAG_NAME: ${{ steps.tag.outputs.tag_name }}
+          REPO_NAME: ${{ github.event.client_payload.repo_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          import os
+          import re
+          import datetime
+
+          # 配置
+          readme_path = "README.md"
+          marker_start = "<!-- RELEASE_TABLE_START -->"
+          marker_end = "<!-- RELEASE_TABLE_END -->"
+          header = "| 项目 (Project) | 版本 (Tag) | 更新时间 (Time) | 更新日志 (Log) | 下载 (Download) |\n| :--- | :--- | :--- | :--- | :--- |"
+          
+          # 获取输入
+          tag_name = os.environ.get("TAG_NAME", "Unknown")
+          repo_name = os.environ.get("REPO_NAME", "Unknown")
+          commit_msg = os.environ.get("COMMIT_MSG", "Update")
+          current_repo = os.environ.get("GITHUB_REPOSITORY")
+          
+          # 北京时间
+          utc_now = datetime.datetime.utcnow()
+          beijing_now = utc_now + datetime.timedelta(hours=8)
+          time_str = beijing_now.strftime("%Y-%m-%d %H:%M")
+
+          # 扫描产物
+          assets_dir = "release-assets"
+          new_rows = {}
+          
+          if os.path.exists(assets_dir):
+              for f in os.listdir(assets_dir):
+                  if not f.endswith(".zip"): continue
+                  
+                  # 项目名 (去后缀)
+                  proj_name = f[:-4]
+                  download_url = f"https://github.com/{current_repo}/releases/download/{tag_name}/{f}"
+                  
+                  # 清理日志中的特殊字符
+                  safe_msg = commit_msg.split('\n')[0].replace('|', '\|').strip()
+                  
+                  # 构造行
+                  row = f"| {proj_name} | {tag_name} | {time_str} | {safe_msg} | [点击下载]({download_url}) |"
+                  new_rows[proj_name] = row
+
+          if not new_rows:
+              print("No zip assets found, skipping README update.")
+              exit(0)
+
+          # 读取 README
+          if not os.path.exists(readme_path):
+              content = f"# App Store\n\n## 📦 最新发布 (Latest Releases)\n{marker_start}\n{marker_end}\n"
+          else:
+              with open(readme_path, "r", encoding="utf-8") as f:
+                  content = f.read()
+              
+              # 确保有 Marker
+              if marker_start not in content:
+                  content += f"\n\n## 📦 最新发布 (Latest Releases)\n{marker_start}\n{marker_end}\n"
+
+          # 提取并解析旧表格（保留其他项目的记录）
+          pattern = re.compile(f"{re.escape(marker_start)}(.*?){re.escape(marker_end)}", re.DOTALL)
+          match = pattern.search(content)
+          
+          final_rows = {}
+          
+          if match:
+              old_table_block = match.group(1).strip()
+              lines = old_table_block.split('\n')
+              for line in lines:
+                  if not line.strip().startswith("|") or "---" in line or "Project" in line:
+                      continue
+                  
+                  parts = [p.strip() for p in line.split('|')]
+                  if len(parts) >= 2:
+                      p_name = parts[1]
+                      if p_name:
+                          final_rows[p_name] = line
+
+          # 更新当前项目的行
+          for name, row in new_rows.items():
+              final_rows[name] = row
+              print(f"Updated entry for: {name}")
+
+          # 重新生成表格
+          sorted_rows = [final_rows[k] for k in sorted(final_rows.keys())]
+          new_table = f"\n{header}\n" + "\n".join(sorted_rows) + "\n"
+          
+          # 替换内容
+          new_content = pattern.sub(f"{marker_start}{new_table}{marker_end}", content)
+          
+          with open(readme_path, "w", encoding="utf-8") as f:
+              f.write(new_content)
+
+      # -----------------------------
+      # Step 11: 提交 README 变更
+      # -----------------------------
+      - name: Commit and Push README
+        if: success()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "docs: auto update readme for release ${{ steps.tag.outputs.tag_name }}" || echo "No changes to commit"
+          git push origin main
+
+      # -----------------------------
+      # Step 12: 更新 Commit 状态（成功或失败）
       # -----------------------------
       - name: Update Commit Status
         if: always()
