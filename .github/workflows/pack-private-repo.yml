@@ -1,90 +1,116 @@
 name: Auto Pack Private Repo On Push
 
-# 触发条件：监听 repository_dispatch 事件（由私有仓库触发）
 on:
   repository_dispatch:
-    types: [pack_trigger]  # 自定义事件类型，需和私有仓库的触发参数一致
-  workflow_dispatch:       # 保留手动触发，方便测试
+    types: [pack_trigger]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # 创建 Release / Tag
   actions: read
 
 jobs:
   pack-specific-repo:
     runs-on: ubuntu-latest
-    steps:
-      # 步骤 1：配置 Git 凭证（拉取私有仓库用）
-      - name: Configure Git Credentials
-        run: |
-          git config --global credential.helper store
-          echo "https://${{ secrets.PRIVATE_REPO_TOKEN }}:@github.com" > ~/.git-credentials
 
-      # 步骤 2：解析触发参数，拉取对应私有仓库代码
+    steps:
+      # -----------------------------
+      # Step 1：拉取私有仓库
+      # -----------------------------
       - name: Clone Triggered Private Repository
         env:
-          # 从 dispatch 事件中获取传递的仓库名、分支名（私有仓库触发时传入）
           REPO_NAME: ${{ github.event.client_payload.repo_name }}
           REPO_BRANCH: ${{ github.event.client_payload.repo_branch }}
           GITHUB_USER: ${{ github.event.client_payload.github_user }}
+          TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
         run: |
-          # 校验参数是否存在
+          set -e
+
           if [ -z "$REPO_NAME" ] || [ -z "$GITHUB_USER" ]; then
-            echo "Error: 缺少仓库名/用户名参数"
+            echo "❌ 缺少 repo_name 或 github_user"
             exit 1
           fi
-          # 拉取对应私有仓库（默认分支为 main，可通过参数覆盖）
-          REPO_URL="https://github.com/$GITHUB_USER/$REPO_NAME.git"
-          git clone $REPO_URL target-repo
-          cd target-repo
-          git checkout ${REPO_BRANCH:-main}  # 分支不存在则用main
 
-      # 步骤 3：安装依赖（通用 Node.js 示例，可按仓库类型动态调整）
-      - name: Install Dependencies
+          echo "📦 拉取私有仓库: $GITHUB_USER/$REPO_NAME"
+          REPO_URL="https://x-access-token:${TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
+
+          git clone --depth=1 "$REPO_URL" target-repo
+          cd target-repo
+          git checkout "${REPO_BRANCH:-main}"
+
+      # -----------------------------
+      # Step 2：安装依赖（多语言）
+      # -----------------------------
+      - name: Setup Dependencies
         working-directory: ./target-repo
         run: |
-          # 适配多语言：可根据仓库名/特征文件判断语言（比如检测 package.json/mvn pom.xml）
+          set -e
+
           if [ -f "package.json" ]; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-            npm install
+            echo "🔧 检测到 Node.js 项目"
           elif [ -f "pom.xml" ]; then
+            echo "🔧 检测到 Maven 项目"
+            sudo apt-get update
             sudo apt-get install -y maven
           elif [ -f "requirements.txt" ]; then
+            echo "🔧 检测到 Python 项目"
+            sudo apt-get update
             sudo apt-get install -y python3-pip
             pip3 install -r requirements.txt
+            pip3 install pyinstaller
+          else
+            echo "⚠ 未识别项目类型，跳过依赖安装"
           fi
 
-      # 步骤 4：打包代码（动态适配多语言）
+      - uses: actions/setup-node@v4
+        if: hashFiles('target-repo/package.json') != ''
+        with:
+          node-version: 20
+
+      - name: Install Node Dependencies
+        if: hashFiles('target-repo/package.json') != ''
+        working-directory: ./target-repo
+        run: npm ci || npm install
+
+      # -----------------------------
+      # Step 3：构建项目
+      # -----------------------------
       - name: Build Project
         working-directory: ./target-repo
         run: |
-          # 按仓库类型执行打包命令
+          set -e
+
           if [ -f "package.json" ]; then
-            npm run build || echo "Node.js 打包命令未配置，跳过"
+            echo "🚀 构建 Node.js 项目"
+            npm run build
           elif [ -f "pom.xml" ]; then
-            mvn package -DskipTests || echo "Maven 打包命令未配置，跳过"
+            echo "🚀 构建 Maven 项目"
+            mvn package -DskipTests
           elif [ -f "requirements.txt" ]; then
-            # Python 打包示例（需提前在私有仓库配好 pyinstaller）
-            pyinstaller --onefile main.py || echo "Python 打包命令未配置，跳过"
+            if [ -f "main.py" ]; then
+              echo "🚀 构建 Python 项目"
+              pyinstaller --onefile main.py
+            else
+              echo "⚠ 未找到 main.py，跳过 Python 构建"
+            fi
+          else
+            echo "⚠ 无构建步骤"
           fi
 
+      # -----------------------------
+      # Step 4：收集构建产物
+      # -----------------------------
       - name: Collect Build Artifacts
         id: collect
         run: |
           set -e
           ARTIFACT_DIR="$GITHUB_WORKSPACE/build-artifacts"
           mkdir -p "$ARTIFACT_DIR"
-          if [ -d "./target-repo/dist" ]; then
-            cp -R ./target-repo/dist "$ARTIFACT_DIR/"
-          fi
-          if [ -d "./target-repo/target" ]; then
-            cp -R ./target-repo/target "$ARTIFACT_DIR/"
-          fi
-          if compgen -G "./target-repo/dist/*.exe" > /dev/null; then
-            cp ./target-repo/dist/*.exe "$ARTIFACT_DIR/"
-          fi
-          if [ -d "$ARTIFACT_DIR" ] && [ "$(ls -A "$ARTIFACT_DIR")" ]; then
+
+          [ -d "./target-repo/dist" ] && cp -R ./target-repo/dist "$ARTIFACT_DIR/"
+          [ -d "./target-repo/target" ] && cp -R ./target-repo/target "$ARTIFACT_DIR/"
+
+          if [ "$(ls -A "$ARTIFACT_DIR")" ]; then
             echo "has_artifacts=true" >> $GITHUB_OUTPUT
           else
             echo "has_artifacts=false" >> $GITHUB_OUTPUT
@@ -92,42 +118,45 @@ jobs:
 
       - name: Ensure Artifacts Exist
         if: steps.collect.outputs.has_artifacts != 'true'
-        run: exit 1
+        run: |
+          echo "❌ 未生成任何构建产物"
+          exit 1
 
-      # 步骤 5：上传打包产物（产物名包含仓库名，方便区分）
+      # -----------------------------
+      # Step 5：上传 Artifact
+      # -----------------------------
       - name: Upload Build Artifact
-        if: steps.collect.outputs.has_artifacts == 'true'
         uses: actions/upload-artifact@v4
+        if: steps.collect.outputs.has_artifacts == 'true'
         with:
           name: ${{ github.event.client_payload.repo_name }}-build
-          path: |
-            ./build-artifacts/
+          path: build-artifacts/
           retention-days: 7
 
-      # 步骤 6：生成 Release Tag
+      # -----------------------------
+      # Step 6：生成 Release Tag
+      # -----------------------------
       - name: Generate Release Tag
         id: tag
         run: |
-          # 使用时间戳作为版本号的一部分
-          TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-          REPO_NAME="${{ github.event.client_payload.repo_name }}"
-          # 处理空变量情况
-          if [ -z "$REPO_NAME" ]; then REPO_NAME="manual-build"; fi
-          echo "tag_name=${REPO_NAME}-${TIMESTAMP}" >> $GITHUB_OUTPUT
+          TS=$(date +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}
+          NAME="${{ github.event.client_payload.repo_name }}"
+          [ -z "$NAME" ] && NAME="manual-build"
+          echo "tag_name=${NAME}-${TS}" >> $GITHUB_OUTPUT
 
-      # 步骤 7：创建 GitHub Release 并上传产物
-      - name: Create Release
+      # -----------------------------
+      # Step 7：创建 Release
+      # -----------------------------
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: steps.collect.outputs.has_artifacts == 'true'
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           name: Release ${{ steps.tag.outputs.tag_name }}
           body: |
-            Build for repository: ${{ github.event.client_payload.repo_name }}
+            Source Repo: ${{ github.event.client_payload.github_user }}/${{ github.event.client_payload.repo_name }}
             Branch: ${{ github.event.client_payload.repo_branch }}
-            Triggered by: ${{ github.event.client_payload.github_user }}
-          files: |
-            ./build-artifacts/**
+          files: build-artifacts/**
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
