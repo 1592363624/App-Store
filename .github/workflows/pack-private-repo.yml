@@ -69,15 +69,39 @@ jobs:
             pyinstaller --onefile main.py || echo "Python 打包命令未配置，跳过"
           fi
 
+      - name: Collect Build Artifacts
+        id: collect
+        run: |
+          set -e
+          ARTIFACT_DIR="$GITHUB_WORKSPACE/build-artifacts"
+          mkdir -p "$ARTIFACT_DIR"
+          if [ -d "./target-repo/dist" ]; then
+            cp -R ./target-repo/dist "$ARTIFACT_DIR/"
+          fi
+          if [ -d "./target-repo/target" ]; then
+            cp -R ./target-repo/target "$ARTIFACT_DIR/"
+          fi
+          if compgen -G "./target-repo/dist/*.exe" > /dev/null; then
+            cp ./target-repo/dist/*.exe "$ARTIFACT_DIR/"
+          fi
+          if [ -d "$ARTIFACT_DIR" ] && [ "$(ls -A "$ARTIFACT_DIR")" ]; then
+            echo "has_artifacts=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_artifacts=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Ensure Artifacts Exist
+        if: steps.collect.outputs.has_artifacts != 'true'
+        run: exit 1
+
       # 步骤 5：上传打包产物（产物名包含仓库名，方便区分）
       - name: Upload Build Artifact
+        if: steps.collect.outputs.has_artifacts == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.client_payload.repo_name }}-build
           path: |
-            ./target-repo/dist/
-            ./target-repo/target/
-            ./target-repo/dist/*.exe
+            ./build-artifacts/
           retention-days: 7
 
       # 步骤 6：生成 Release Tag
@@ -94,7 +118,7 @@ jobs:
       # 步骤 7：创建 GitHub Release 并上传产物
       - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: success()
+        if: steps.collect.outputs.has_artifacts == 'true'
         with:
           tag_name: ${{ steps.tag.outputs.tag_name }}
           name: Release ${{ steps.tag.outputs.tag_name }}
@@ -103,9 +127,7 @@ jobs:
             Branch: ${{ github.event.client_payload.repo_branch }}
             Triggered by: ${{ github.event.client_payload.github_user }}
           files: |
-            ./target-repo/dist/*
-            ./target-repo/target/*.jar
-            ./target-repo/dist/*.exe
-            ./target-repo/requirements.txt
+            ./build-artifacts/**
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
