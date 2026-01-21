@@ -1,4 +1,4 @@
-name: Auto Pack Private Repo On Push
+name: App Store Auto Pack
 
 on:
   repository_dispatch:
@@ -6,177 +6,168 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # 创建 Release / Tag
+  contents: write
   actions: read
 
 jobs:
-  pack-specific-repo:
-    runs-on: ubuntu-latest
+  app-store-pack:
+    runs-on: windows-latest
+
+    env:
+      ARTIFACT_ROOT: build-artifacts
 
     steps:
-      # -----------------------------
-      # Step 1：拉取私有仓库
-      # -----------------------------
-      - name: Clone Triggered Private Repository
-        env:
-          REPO_NAME: ${{ github.event.client_payload.repo_name }}
-          REPO_BRANCH: ${{ github.event.client_payload.repo_branch }}
-          GITHUB_USER: ${{ github.event.client_payload.github_user }}
-          TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+      # =====================================================
+      # Step 1：拉取私有源仓库
+      # =====================================================
+      - name: Clone source repository
+        shell: bash
         run: |
           set -e
 
-          if [ -z "$REPO_NAME" ] || [ -z "$GITHUB_USER" ]; then
+          REPO="${{ github.event.client_payload.repo_name }}"
+          USER="${{ github.event.client_payload.github_user }}"
+          BRANCH="${{ github.event.client_payload.repo_branch || 'main' }}"
+
+          if [ -z "$REPO" ] || [ -z "$USER" ]; then
             echo "❌ 缺少 repo_name 或 github_user"
             exit 1
           fi
 
-          echo "📦 拉取私有仓库: $GITHUB_USER/$REPO_NAME"
-          REPO_URL="https://x-access-token:${TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
+          echo "📦 克隆 $USER/$REPO ($BRANCH)"
 
-          git clone "$REPO_URL" target-repo
-          cd target-repo
-          git checkout "${REPO_BRANCH:-main}"
+          git clone --branch "$BRANCH" \
+            "https://x-access-token:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/$USER/$REPO.git" \
+            source
 
-      # -----------------------------
-      # Step 2：安装依赖（多语言）
-      # -----------------------------
-      - name: Setup Dependencies
-        working-directory: ./target-repo
-        run: |
-          set -e
+      # =====================================================
+      # Step 2：环境准备（按需）
+      # =====================================================
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
-          if [ -f "package.json" ]; then
-            echo "🔧 检测到 Node.js 项目"
-          elif [ -f "pom.xml" ]; then
-            echo "🔧 检测到 Maven 项目"
-            sudo apt-get update
-            sudo apt-get install -y maven
-          elif [ -f "requirements.txt" ]; then
-            echo "🔧 检测到 Python 项目"
-            sudo apt-get update
-            sudo apt-get install -y python3-pip
-            pip3 install -r requirements.txt
-            pip3 install pyinstaller
-          else
-            echo "⚠ 未识别项目类型，跳过依赖安装"
-          fi
-
-      - uses: actions/setup-node@v4
-        if: hashFiles('target-repo/package.json') != ''
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install Node Dependencies
-        if: hashFiles('target-repo/package.json') != ''
-        working-directory: ./target-repo
-        run: npm ci || npm install
+      - name: Setup Python
+        shell: bash
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
 
-      # -----------------------------
-      # Step 3：构建项目
-      # -----------------------------
-      - name: Build Project
-        working-directory: ./target-repo
+      # =====================================================
+      # Step 3：智能识别 + 构建
+      # =====================================================
+      - name: Detect & Build
+        shell: bash
+        working-directory: ./source
         run: |
           set -e
 
+          mkdir -p "../$ARTIFACT_ROOT"
+
+          # -----------------------------
+          # 1️⃣ WPF / .NET（最高优先级）
+          # -----------------------------
+          PROJECT=$(find . -name "*.csproj" | head -n 1 || true)
+
+          if [ -n "$PROJECT" ]; then
+            echo "🟦 检测到 .NET / WPF 项目：$PROJECT"
+
+            dotnet restore "$PROJECT"
+            dotnet publish "$PROJECT" \
+              -c Release \
+              -r win-x64 \
+              --self-contained true \
+              -p:PublishSingleFile=true \
+              -p:EnableCompressionInSingleFile=true \
+              -o "../$ARTIFACT_ROOT"
+
+            exit 0
+          fi
+
+          # -----------------------------
+          # 2️⃣ Node.js
+          # -----------------------------
           if [ -f "package.json" ]; then
-            echo "🚀 构建 Node.js 项目"
+            echo "🟩 检测到 Node.js 项目"
+
+            npm ci || npm install
             npm run build
-          elif [ -f "pom.xml" ]; then
-            echo "🚀 构建 Maven 项目"
-            mvn package -DskipTests
-          elif [ -f "requirements.txt" ]; then
-            if [ -f "main.py" ]; then
-              echo "🚀 构建 Python 项目"
-              pyinstaller --onefile main.py
-            else
-              echo "⚠ 未找到 main.py，跳过 Python 构建"
-            fi
-          else
-            echo "⚠ 无构建步骤"
+
+            [ -d "dist" ] && cp -r dist "../$ARTIFACT_ROOT/"
+            exit 0
           fi
 
-      # -----------------------------
-      # Step 4：收集构建产物
-      # -----------------------------
-      - name: Collect Build Artifacts
-        id: collect
-        run: |
-          set -e
-          ARTIFACT_DIR="$GITHUB_WORKSPACE/build-artifacts"
-          mkdir -p "$ARTIFACT_DIR"
-          
-          echo "🔍 正在自动搜寻构建产物..."
-          
-          # 1. 扫描常见构建目录 (dist, build, out, target, bin, release)
-          # dist: Node.js, Python, etc.
-          # target: Java (Maven), Rust
-          # build: Web Frontends, Gradle
-          # out: .NET, etc.
-          for dir in dist target build out bin release; do
-            if [ -d "./target-repo/$dir" ]; then
-              echo "✅ 发现产物目录: $dir"
-              cp -r "./target-repo/$dir" "$ARTIFACT_DIR/"
+          # -----------------------------
+          # 3️⃣ Python
+          # -----------------------------
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ]; then
+            echo "🟨 检测到 Python 项目"
+
+            if [ ! -f "main.py" ]; then
+              echo "❌ Python 项目未找到 main.py"
+              exit 1
             fi
-          done
-          
-          # 2. 扫描根目录下的常见产物文件 (.jar, .exe, .zip, .apk, .dmg, .whl)
-          find ./target-repo -maxdepth 1 -type f \( -name "*.jar" -o -name "*.exe" -o -name "*.zip" -o -name "*.apk" -o -name "*.dmg" -o -name "*.whl" \) -exec cp {} "$ARTIFACT_DIR/" \;
-          
-          # 3. 检查结果
-          if [ "$(ls -A "$ARTIFACT_DIR")" ]; then
-            echo "has_artifacts=true" >> $GITHUB_OUTPUT
-            echo "📦 已收集产物清单:"
-            ls -R "$ARTIFACT_DIR"
-          else
-            echo "has_artifacts=false" >> $GITHUB_OUTPUT
-            echo "❌ 未能自动识别到产物。当前目录结构如下："
-            # 打印目录结构辅助排查（排除 .git 和 node_modules）
-            find ./target-repo -maxdepth 2 -not -path '*/.*' -not -path '*/node_modules*'
+
+            pyinstaller --onefile main.py
+            cp dist/* "../$ARTIFACT_ROOT/"
+            exit 0
           fi
 
-      - name: Ensure Artifacts Exist
-        if: steps.collect.outputs.has_artifacts != 'true'
-        run: |
-          echo "::error::未找到构建产物！请检查 build 命令是否成功执行，或产物是否在 dist/target/build 等非常规目录之外。"
-          exit 1
+          # -----------------------------
+          # 4️⃣ 兜底：源码打包
+          # -----------------------------
+          echo "⚠ 未识别构建类型，打包源码"
+          cp -r . "../$ARTIFACT_ROOT/source"
 
-      # -----------------------------
+      # =====================================================
+      # Step 4：校验产物
+      # =====================================================
+      - name: Verify artifacts
+        shell: bash
+        run: |
+          if [ ! -d "$ARTIFACT_ROOT" ] || [ -z "$(ls -A "$ARTIFACT_ROOT")" ]; then
+            echo "❌ 未生成任何构建产物"
+            exit 1
+          fi
+
+          echo "📦 构建产物清单："
+          ls -R "$ARTIFACT_ROOT"
+
+      # =====================================================
       # Step 5：上传 Artifact
-      # -----------------------------
-      - name: Upload Build Artifact
+      # =====================================================
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
-        if: steps.collect.outputs.has_artifacts == 'true'
         with:
           name: ${{ github.event.client_payload.repo_name }}-build
           path: build-artifacts/
           retention-days: 7
 
-      # -----------------------------
-      # Step 6：生成 Release Tag
-      # -----------------------------
-      - name: Generate Release Tag
+      # =====================================================
+      # Step 6：Release
+      # =====================================================
+      - name: Generate tag
         id: tag
+        shell: bash
         run: |
-          TS=$(date +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}
           NAME="${{ github.event.client_payload.repo_name }}"
-          [ -z "$NAME" ] && NAME="manual-build"
-          echo "tag_name=${NAME}-${TS}" >> $GITHUB_OUTPUT
+          TS=$(date +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}
+          echo "tag=${NAME}-${TS}" >> $GITHUB_OUTPUT
 
-      # -----------------------------
-      # Step 7：创建 Release
-      # -----------------------------
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
-        if: steps.collect.outputs.has_artifacts == 'true'
         with:
-          tag_name: ${{ steps.tag.outputs.tag_name }}
-          name: Release ${{ steps.tag.outputs.tag_name }}
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: App Store Release ${{ steps.tag.outputs.tag }}
           body: |
             Source Repo: ${{ github.event.client_payload.github_user }}/${{ github.event.client_payload.repo_name }}
             Branch: ${{ github.event.client_payload.repo_branch }}
           files: build-artifacts/**
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
