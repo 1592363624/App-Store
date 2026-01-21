@@ -87,7 +87,8 @@ jobs:
           # 格式: RepoName-Time-RunNum
           # 我们只需要找到最近的一个
           echo "Searching for previous release of $REPO_NAME..."
-          LAST_TAG=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --exclude-pre-releases --limit 100 | grep "^$REPO_NAME-" | head -n 1 | awk '{print $1}')
+          # 使用 || true 防止因为找不到 Release 而导致脚本直接报错退出
+          LAST_TAG=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --exclude-pre-releases --limit 100 | grep "^$REPO_NAME-" | head -n 1 | awk '{print $1}' || true)
           
           if [ -n "$LAST_TAG" ]; then
             echo "Found previous tag: $LAST_TAG"
