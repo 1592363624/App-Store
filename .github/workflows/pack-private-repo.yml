@@ -34,7 +34,7 @@ jobs:
           echo "📦 拉取私有仓库: $GITHUB_USER/$REPO_NAME"
           REPO_URL="https://x-access-token:${TOKEN}@github.com/${GITHUB_USER}/${REPO_NAME}.git"
 
-          git clone --depth=1 "$REPO_URL" target-repo
+          git clone "$REPO_URL" target-repo
           cd target-repo
           git checkout "${REPO_BRANCH:-main}"
 
@@ -106,20 +106,40 @@ jobs:
           set -e
           ARTIFACT_DIR="$GITHUB_WORKSPACE/build-artifacts"
           mkdir -p "$ARTIFACT_DIR"
-
-          [ -d "./target-repo/dist" ] && cp -R ./target-repo/dist "$ARTIFACT_DIR/"
-          [ -d "./target-repo/target" ] && cp -R ./target-repo/target "$ARTIFACT_DIR/"
-
+          
+          echo "🔍 正在自动搜寻构建产物..."
+          
+          # 1. 扫描常见构建目录 (dist, build, out, target, bin, release)
+          # dist: Node.js, Python, etc.
+          # target: Java (Maven), Rust
+          # build: Web Frontends, Gradle
+          # out: .NET, etc.
+          for dir in dist target build out bin release; do
+            if [ -d "./target-repo/$dir" ]; then
+              echo "✅ 发现产物目录: $dir"
+              cp -r "./target-repo/$dir" "$ARTIFACT_DIR/"
+            fi
+          done
+          
+          # 2. 扫描根目录下的常见产物文件 (.jar, .exe, .zip, .apk, .dmg, .whl)
+          find ./target-repo -maxdepth 1 -type f \( -name "*.jar" -o -name "*.exe" -o -name "*.zip" -o -name "*.apk" -o -name "*.dmg" -o -name "*.whl" \) -exec cp {} "$ARTIFACT_DIR/" \;
+          
+          # 3. 检查结果
           if [ "$(ls -A "$ARTIFACT_DIR")" ]; then
             echo "has_artifacts=true" >> $GITHUB_OUTPUT
+            echo "📦 已收集产物清单:"
+            ls -R "$ARTIFACT_DIR"
           else
             echo "has_artifacts=false" >> $GITHUB_OUTPUT
+            echo "❌ 未能自动识别到产物。当前目录结构如下："
+            # 打印目录结构辅助排查（排除 .git 和 node_modules）
+            find ./target-repo -maxdepth 2 -not -path '*/.*' -not -path '*/node_modules*'
           fi
 
       - name: Ensure Artifacts Exist
         if: steps.collect.outputs.has_artifacts != 'true'
         run: |
-          echo "❌ 未生成任何构建产物"
+          echo "::error::未找到构建产物！请检查 build 命令是否成功执行，或产物是否在 dist/target/build 等非常规目录之外。"
           exit 1
 
       # -----------------------------
