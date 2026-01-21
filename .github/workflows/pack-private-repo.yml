@@ -91,11 +91,33 @@ jobs:
             pyinstaller --onefile main.py
             echo "BUILD_OUTPUT_DIR=dist" >> $GITHUB_ENV
           elif ls *.csproj 1> /dev/null 2>&1 || ls *.sln 1> /dev/null 2>&1; then
-            echo "🚀 构建 .NET 项目"
-            dotnet publish -c Release -r win-x64 --self-contained true \
-              -p:PublishSingleFile=true \
-              -o publish/
-            echo "BUILD_OUTPUT_DIR=publish" >> $GITHUB_ENV
+            echo "🚀 发现 .NET 项目，开始逐个构建..."
+            
+            # 创建临时目录存放原始发布文件
+            mkdir -p publish_raw
+            mkdir -p publish_output
+
+            # 遍历所有 .csproj 文件 (排除 Tests 测试项目)
+            find . -name "*.csproj" | grep -v "Test" | while read proj; do
+              PROJ_NAME=$(basename "$proj" .csproj)
+              echo "👉 正在构建项目: $PROJ_NAME"
+              
+              # 发布到独立目录，防止混淆
+              dotnet publish "$proj" -c Release -r win-x64 --self-contained true \
+                -p:PublishSingleFile=true \
+                -o "publish_raw/$PROJ_NAME"
+
+              # 打包成独立 Zip
+              echo "📦 正在打包: $PROJ_NAME.zip"
+              if command -v 7z > /dev/null; then
+                7z a -tzip "publish_output/$PROJ_NAME.zip" "./publish_raw/$PROJ_NAME/*"
+              else
+                # Fallback to PowerShell for zipping if 7z is missing
+                powershell -Command "Compress-Archive -Path 'publish_raw/$PROJ_NAME/*' -DestinationPath 'publish_output/$PROJ_NAME.zip'"
+              fi
+            done
+            
+            echo "BUILD_OUTPUT_DIR=publish_output" >> $GITHUB_ENV
           else
             echo "⚠ 未识别构建类型，跳过"
           fi
