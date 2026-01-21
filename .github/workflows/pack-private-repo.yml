@@ -72,11 +72,57 @@ jobs:
 
           git checkout ${REPO_BRANCH:-main}
           
-          # 获取最近一次提交信息 (用于更新 README)
-          LAST_MSG=$(git log -1 --pretty=%s)
+          # 获取当前 Commit SHA
+          CURRENT_SHA=$(git rev-parse HEAD)
+          echo "TARGET_SHA=$CURRENT_SHA" >> $GITHUB_ENV
+          
+          echo "🔎 正在计算精准更新日志..."
+          
+          # 尝试从 GitHub Release 历史中找到上一个版本的 Commit SHA
+          # 注意：需要 GITHUB_TOKEN 才能查询 Releases
+          PREV_SHA=""
+          
+          # 1. 列出该项目的历史 Release (过滤前缀)
+          # 格式: RepoName-Time-RunNum
+          # 我们只需要找到最近的一个
+          echo "Searching for previous release of $REPO_NAME..."
+          LAST_TAG=$(gh release list --repo "${{ github.repository }}" --exclude-drafts --exclude-pre-releases --limit 100 | grep "^$REPO_NAME-" | head -n 1 | awk '{print $1}')
+          
+          if [ -n "$LAST_TAG" ]; then
+            echo "Found previous tag: $LAST_TAG"
+            # 2. 获取 Release Body
+            BODY=$(gh release view "$LAST_TAG" --repo "${{ github.repository }}" --json body -q .body)
+            # 3. 提取 "Commit: xxx"
+            PREV_SHA=$(echo "$BODY" | grep "Commit: " | awk '{print $2}' | tr -d '\r')
+          fi
+          
+          CHANGELOG=""
+          
+          if [ -n "$PREV_SHA" ]; then
+            echo "Found previous commit SHA: $PREV_SHA"
+            # 检查该 SHA 是否存在于当前历史中
+            if git merge-base --is-ancestor "$PREV_SHA" HEAD; then
+               echo "✅ Calculating changes from $PREV_SHA to HEAD"
+               CHANGELOG=$(git log --no-merges --pretty=format:"- %s" "$PREV_SHA..HEAD")
+            else
+               echo "⚠ Previous commit not found in history (force push?), falling back to last 5."
+               CHANGELOG=$(git log -5 --no-merges --pretty=format:"- %s")
+            fi
+          else
+            echo "⚠ No previous release/commit found (first run?), showing last 5 commits."
+            CHANGELOG=$(git log -5 --no-merges --pretty=format:"- %s")
+          fi
+          
+          # 如果 Changelog 为空 (没有新提交)，显示最后一条
+          if [ -z "$CHANGELOG" ]; then
+             CHANGELOG=$(git log -1 --pretty=format:"- %s (Rebuild)")
+          fi
+
           echo "COMMIT_MSG<<EOF" >> $GITHUB_ENV
-          echo "$LAST_MSG" >> $GITHUB_ENV
+          echo "$CHANGELOG" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # -----------------------------
       # Step 3：安装依赖（自动识别）
@@ -248,6 +294,10 @@ jobs:
           body: |
             Source Repo: ${{ github.event.client_payload.github_user }}/${{ github.event.client_payload.repo_name }}
             Branch: ${{ github.event.client_payload.repo_branch }}
+            Commit: ${{ env.TARGET_SHA }}
+            
+            ### Changelog
+            ${{ env.COMMIT_MSG }}
           files: release-assets/*
           fail_on_unmatched_files: true
         env:
@@ -297,8 +347,14 @@ jobs:
                   proj_name = f[:-4]
                   download_url = f"https://github.com/{current_repo}/releases/download/{tag_name}/{f}"
                   
-                  # 清理日志中的特殊字符
-                  safe_msg = commit_msg.split('\n')[0].replace('|', '\|').strip()
+                  # 清理日志中的特殊字符，并处理多行
+                  lines = [line.strip() for line in commit_msg.split('\n') if line.strip()]
+                  # 限制最多显示 5 行，防止表格过高
+                  if len(lines) > 5:
+                      lines = lines[:5] + ["..."]
+                  
+                  # 转义管道符并用 <br> 连接
+                  safe_msg = "<br>".join([line.replace('|', '\|') for line in lines])
                   
                   # 构造行
                   row = f"| {proj_name} | {tag_name} | {time_str} | {safe_msg} | [点击下载]({download_url}) |"
