@@ -217,7 +217,8 @@ jobs:
         id: tag
         shell: bash
         run: |
-          TS=$(date +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}
+          # 修正时区：GitHub Actions 默认为 UTC，这里手动调整为 UTC+8 (北京时间)
+          TS=$(TZ='Asia/Shanghai' date +'%Y%m%d-%H%M%S')-${GITHUB_RUN_NUMBER}
           NAME="${{ github.event.client_payload.repo_name }}"
           [ -z "$NAME" ] && NAME="manual-build"
           echo "tag_name=${NAME}-${TS}" >> $GITHUB_OUTPUT
