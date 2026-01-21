@@ -58,6 +58,7 @@ jobs:
           REPO_NAME: ${{ github.event.client_payload.repo_name }}
           REPO_BRANCH: ${{ github.event.client_payload.repo_branch }}
           GITHUB_USER: ${{ github.event.client_payload.github_user }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
@@ -121,8 +122,6 @@ jobs:
           echo "COMMIT_MSG<<EOF" >> $GITHUB_ENV
           echo "$CHANGELOG" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # -----------------------------
       # Step 3：安装依赖（自动识别）
