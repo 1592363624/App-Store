@@ -41,20 +41,6 @@
     "stars": 0,
     "updated_at": ""
   },
-  "astrbot_plugin_qq_operater_shell": {
-    "name": "astrbot_plugin_qq_operater_shell",
-    "desc": "【仅QQ】调用QQ接口来实现QQ群操作管理等行为",
-    "version": "1.0.2",
-    "author": "Shell",
-    "repo": "https://github.com/1592363624/astrbot_plugin_qq_operater_shell",
-    "display_name": "QQ操作插件",
-    "social_link": "",
-    "tags": [],
-    "logo": "",
-    "pinned": false,
-    "stars": 0,
-    "updated_at": ""
-  },
   "astrbot_plugin_minecraft_monitor": {
     "name": "astrbot_plugin_minecraft_monitor",
     "desc": "Minecraft服务器监控插件，支持定时检测服务器状态变化并发送通知。可配置目标群、服务器地址、检查间隔等。",
@@ -62,6 +48,20 @@
     "author": "Shell",
     "repo": "https://github.com/1592363624/astrbot_plugin_mcmcmc",
     "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
+  "Rcon连接插件": {
+    "name": "Rcon连接插件",
+    "desc": "定时监控Rcon连接执行并发送通知",
+    "version": "1.0.0",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_rcon_shell",
+    "display_name": "Rcon连接插件",
     "social_link": "",
     "tags": [],
     "logo": "",
