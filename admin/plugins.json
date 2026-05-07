@@ -99,6 +99,20 @@
     "stars": 0,
     "updated_at": ""
   },
+  "astrbot_plugin_xiuxian_shell": {
+    "name": "astrbot_plugin_xiuxian_shell",
+    "desc": "重生之凡人修仙，文字修仙游戏插件",
+    "version": "0.0.1",
+    "author": "Shell",
+    "repo": "",
+    "display_name": "",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
   "astrbot_plugin_zanwo_shell": {
     "name": "astrbot_plugin_zanwo_shell",
     "desc": "QQ点赞插件，每天可点50个赞，还能定时自动点赞",
