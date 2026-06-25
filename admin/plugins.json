@@ -55,6 +55,20 @@
     "stars": 0,
     "updated_at": ""
   },
+  "astrbot_plugin_no_wake": {
+    "name": "astrbot_plugin_no_wake",
+    "desc": "允许机器人不需要唤醒词即可触发指令，支持动态开关",
+    "version": "1.0.0",
+    "author": "Shell",
+    "repo": "https://github.com/1592363624/astrbot_plugin_no_wake",
+    "display_name": "免唤醒词插件",
+    "social_link": "",
+    "tags": [],
+    "logo": "",
+    "pinned": false,
+    "stars": 0,
+    "updated_at": ""
+  },
   "astrbot_plugin_qq_operater_shell": {
     "name": "astrbot_plugin_qq_operater_shell",
     "desc": "【仅QQ】调用QQ接口来实现QQ群操作管理等行为",
